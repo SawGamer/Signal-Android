@@ -372,6 +372,9 @@ android {
       for (ips in listOf("SERVICE", "STORAGE", "CDN", "CDN2", "CDN3", "SFU", "CONTENT_PROXY", "CDSI", "SVR2")) {
         buildConfigField("String[]", "SIGNAL_${ips}_IPS", noIps)
       }
+      // Self-hosted proof-of-work captcha page (Signal-Server/selfhost/captcha), served from your chat host
+      buildConfigField("String", "SIGNAL_CAPTCHA_URL", "\"https://chat.$domain/captcha/registration/\"")
+      buildConfigField("String", "RECAPTCHA_PROOF_URL", "\"https://chat.$domain/captcha/challenge/\"")
       buildConfigField("String", "WEBAUTHN_RP_ID", "\"$domain\"")
       buildConfigField("String", "BADGE_STATIC_ROOT", "\"https://cdn.$domain/static/badges/\"")
       buildConfigField("String[]", "UNIDENTIFIED_SENDER_TRUST_ROOTS", "new String[]{ \"${selfhostValue("unidentifiedSenderTrustRoot")}\" }")
