@@ -295,7 +295,8 @@ class SignalServiceNetworkAccess(context: Context) {
   }
 
   fun getConfiguration(e164: String?): SignalServiceConfiguration {
-    if (e164 == null || SignalStore.proxy.isProxyEnabled) {
+    // Signal's censorship circumvention fronts traffic to Signal's own servers, so it can't reach a self-hosted one.
+    if (BuildConfig.SELF_HOSTED || e164 == null || SignalStore.proxy.isProxyEnabled) {
       return uncensoredConfiguration
     }
 
@@ -329,7 +330,7 @@ class SignalServiceNetworkAccess(context: Context) {
   }
 
   fun isCountryCodeCensoredByDefault(countryCode: Int): Boolean {
-    return defaultCensoredCountryCodes.contains(countryCode)
+    return !BuildConfig.SELF_HOSTED && defaultCensoredCountryCodes.contains(countryCode)
   }
 
   private fun buildGConfiguration(

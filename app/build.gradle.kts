@@ -29,6 +29,39 @@ plugins {
 }
 
 val staticIps = Properties().apply { file("static-ips.properties").reader().use { load(it) } }
+
+// --- Self-hosting (see selfhost.properties) -----------------------------------------------------------------
+val selfhost: Properties = Properties().apply {
+  listOf("selfhost.properties", "selfhost.local.properties")
+    .map { File(rootProject.projectDir, it) }
+    .filter { it.exists() }
+    .forEach { f -> f.reader(Charsets.UTF_8).use { load(it) } }
+}
+val isSelfHosted = selfhost.getProperty("selfhost.enabled", "false").toBoolean()
+
+fun selfhostValue(key: String): String {
+  val value = selfhost.getProperty("selfhost.$key")?.trim()
+  if (value.isNullOrEmpty() || value.startsWith("REPLACE_WITH")) {
+    throw GradleException(
+      "selfhost.$key is not set. Copy it from your server's selfhost/secrets/public.yml into " +
+        "selfhost.local.properties (or selfhost.properties)."
+    )
+  }
+  return value
+}
+
+/** App-name resources for self-hosted builds; attached to every build type so they override src/main. */
+val selfhostResDir: File = layout.buildDirectory.dir("generated/selfhost-res").get().asFile
+if (isSelfHosted) {
+  fun xml(name: String) = name.replace("&", "&amp;").replace("<", "&lt;")
+  mapOf("values" to selfhostValue("appName"), "values-ar" to selfhostValue("appNameAr")).forEach { (dir, name) ->
+    File(selfhostResDir, dir).mkdirs()
+    File(selfhostResDir, "$dir/selfhost_strings.xml").writeText(
+      "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<resources>\n" +
+        "  <string name=\"app_name\" translatable=\"false\">${xml(name)}</string>\n</resources>\n"
+    )
+  }
+}
 staticIps.stringPropertyNames().forEach { rootProject.extra[it] = staticIps.getProperty(it) }
 
 val canonicalVersionCode = 1776
@@ -195,6 +228,10 @@ android {
     }
   }
 
+  if (isSelfHosted) {
+    buildTypes.all { sourceSets.getByName(name).res.srcDir(selfhostResDir) }
+  }
+
   sourceSets {
     getByName("test") {
       java.directories += "$projectDir/src/testShared"
@@ -312,6 +349,36 @@ android {
     buildConfigField("String", "STRIPE_PUBLISHABLE_KEY", "\"pk_live_6cmGZopuTsV8novGgJJW9JpC00vLIgtQ1D\"")
     buildConfigField("boolean", "TRACING_ENABLED", "false")
     buildConfigField("boolean", "LINK_DEVICE_UX_ENABLED", "false")
+    buildConfigField("boolean", "SELF_HOSTED", "$isSelfHosted")
+
+    if (isSelfHosted) {
+      // Point every Signal service at your own domain. Services you don't run yet (storage, contact discovery,
+      // PIN backup, calling, attachments v2/v3) simply fail until they are added.
+      val domain = selfhostValue("domain")
+      val noIps = "new String[]{}"
+      applicationId = selfhostValue("applicationId")
+      project.ext.set("archivesBaseName", selfhostValue("applicationId"))
+      buildConfigField("String", "SIGNAL_URL", "\"https://chat.$domain\"")
+      buildConfigField("String", "STORAGE_URL", "\"https://storage.$domain\"")
+      buildConfigField("String", "SIGNAL_CDN_URL", "\"https://cdn.$domain\"")
+      buildConfigField("String", "SIGNAL_CDN2_URL", "\"https://cdn2.$domain\"")
+      buildConfigField("String", "SIGNAL_CDN3_URL", "\"https://cdn3.$domain\"")
+      buildConfigField("String", "SIGNAL_CDSI_URL", "\"https://cdsi.$domain\"")
+      buildConfigField("String", "SIGNAL_SERVICE_STATUS_URL", "\"uptime.$domain\"")
+      buildConfigField("String", "SIGNAL_SVR2_URL", "\"https://svr2.$domain\"")
+      buildConfigField("String", "SIGNAL_SFU_URL", "\"https://sfu.$domain\"")
+      buildConfigField("String", "CONTENT_PROXY_HOST", "\"contentproxy.$domain\"")
+      // Signal's static IP fallbacks would bypass your DNS and reach Signal's servers
+      for (ips in listOf("SERVICE", "STORAGE", "CDN", "CDN2", "CDN3", "SFU", "CONTENT_PROXY", "CDSI", "SVR2")) {
+        buildConfigField("String[]", "SIGNAL_${ips}_IPS", noIps)
+      }
+      buildConfigField("String", "WEBAUTHN_RP_ID", "\"$domain\"")
+      buildConfigField("String", "BADGE_STATIC_ROOT", "\"https://cdn.$domain/static/badges/\"")
+      buildConfigField("String[]", "UNIDENTIFIED_SENDER_TRUST_ROOTS", "new String[]{ \"${selfhostValue("unidentifiedSenderTrustRoot")}\" }")
+      buildConfigField("String", "ZKGROUP_SERVER_PUBLIC_PARAMS", "\"${selfhostValue("zkGroupServerPublicParams")}\"")
+      buildConfigField("String", "GENERIC_SERVER_PUBLIC_PARAMS", "\"${selfhostValue("callLinkServerPublicParams")}\"")
+      buildConfigField("String", "BACKUP_SERVER_PUBLIC_PARAMS", "\"${selfhostValue("backupServerPublicParams")}\"")
+    }
 
     ndk {
       abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")

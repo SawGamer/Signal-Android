@@ -34,3 +34,6 @@ kls_database.db
 .kotlin
 lefthook-local.yml
 sample-videos/
+
+# Self-hosting: machine-specific overrides of selfhost.properties
+selfhost.local.properties
